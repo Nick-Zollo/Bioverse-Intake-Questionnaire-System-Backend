@@ -81,22 +81,26 @@ app.get("/questions/:id", async (req, res) => {
 });
 
 // User login
-app.post("/login", async (req, res) => {
+app.post('/login', async (req, res) => {
     const { username, password } = req.body;
+
     try {
-        const results = await db.query(
-            "SELECT * FROM users WHERE username = $1 AND password = $2",
-            [username, password]
-        );
+        const results = await db.query("SELECT * FROM users WHERE username = $1 AND password = $2", [username, password]);
 
         if (results.rows.length > 0) {
-            return res.status(200).json({ message: "Login successful" });
+            const user = results.rows[0];
+            
+            if (user.username === 'admin' && user.password === 'admin') {
+                res.status(200).json({ message: 'Login successful', isAdmin: true });
+            } else {
+                res.status(200).json({ message: 'Login successful', isAdmin: false });
+            }
         } else {
-            return res.status(401).json({ message: "Invalid username or password" });
+            res.status(401).json({ message: 'Invalid credentials' });
         }
-    } catch (err) {
-        console.error(err);
-        return res.status(500).json({ message: "Internal server error" });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
