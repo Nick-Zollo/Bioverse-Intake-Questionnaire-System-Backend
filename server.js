@@ -21,6 +21,7 @@ app.get("/users", async (req, res) => {
     }
     catch (err) {
         console.log(err)
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
@@ -40,6 +41,7 @@ app.get("/users/:username", async (req, res) => {
     }
     catch (err) {
         console.log(err)
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
@@ -58,6 +60,7 @@ app.get("/questions", async (req, res) => {
     }
     catch (err) {
         console.log(err)
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
@@ -77,6 +80,24 @@ app.get("/questions/:id", async (req, res) => {
     }
     catch (err) {
         console.log(err)
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// Get all questionnaires
+app.get("/questionnaires", async (req, res) => {
+    try {
+        const results = await db.query("SELECT * FROM questionnaire_questionnaires;");
+        res.status(200).json({
+            status: "success",
+            results: results.rows.length,
+            data: {
+                Questionnaires: results.rows, // Make sure you return the correct data structure
+            },
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
 
