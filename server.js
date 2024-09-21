@@ -87,12 +87,37 @@ app.get("/questions/:id", async (req, res) => {
 // Get all questionnaires
 app.get("/questionnaires", async (req, res) => {
     try {
-        const results = await db.query("SELECT * FROM questionnaire_questionnaires;");
+        const results = await db.query("SELECT * FROM questionnaire_questionnaires");
         res.status(200).json({
             status: "success",
             results: results.rows.length,
             data: {
                 Questionnaires: results.rows, // Make sure you return the correct data structure
+            },
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// Get questions by questionnaire ID
+app.get("/questionnaire/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+        const questionResults = await db.query(`
+            SELECT qq.id, qq.question 
+            FROM questionnaire_junction qj
+            JOIN questionnaire_questions qq ON qj.question_id = qq.id
+            WHERE qj.questionnaire_id = $1
+            ORDER BY qj.priority;
+        `, [id]);
+
+        res.status(200).json({
+            status: "success",
+            results: questionResults.rows.length,
+            data: {
+                Questions: questionResults.rows,
             },
         });
     } catch (err) {
@@ -130,4 +155,3 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
     console.log(`Server is up and listening on port ${port}`);
 });
-
