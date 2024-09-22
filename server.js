@@ -105,7 +105,7 @@ app.get("/questionnaires", async (req, res) => {
 app.get("/questionnaire/:id", async (req, res) => {
     const { id } = req.params;
     try {
-        const questionResults = await db.query(`
+        const results = await db.query(`
             SELECT qq.id, qq.question 
             FROM questionnaire_junction qj
             JOIN questionnaire_questions qq ON qj.question_id = qq.id
@@ -115,9 +115,9 @@ app.get("/questionnaire/:id", async (req, res) => {
 
         res.status(200).json({
             status: "success",
-            results: questionResults.rows.length,
+            results: results.rows.length,
             data: {
-                Questions: questionResults.rows,
+                Questions: results.rows,
             },
         });
     } catch (err) {
@@ -135,17 +135,56 @@ app.post('/login', async (req, res) => {
 
         if (results.rows.length > 0) {
             const user = results.rows[0];
-            
-            if (user.username === 'admin' && user.password === 'admin') {
-                res.status(200).json({ message: 'Login successful', isAdmin: true });
-            } else {
-                res.status(200).json({ message: 'Login successful', isAdmin: false });
-            }
+
+            const responseData = {
+                message: 'Login successful',
+                userId: user.id,
+                isAdmin: (user.username === 'admin' && user.password === 'admin')
+            };
+
+            res.status(200).json(responseData);
         } else {
             res.status(401).json({ message: 'Invalid credentials' });
         }
     } catch (error) {
         console.error(error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+
+// Save user answers
+app.post("/answers", async (req, res) => {
+    const answers = req.body;
+
+    try {
+        const promises = answers.map(({ userId, questionId, answer, questionnaireId }) => 
+            db.query(`INSERT INTO questionnaire_answers (user_id, question_id, answer, questionnaire_id) VALUES ($1, $2, $3, $4)`, [userId, questionId, answer, questionnaireId])
+        );
+
+        await Promise.all(promises);
+
+        res.status(201).json({ status: "success", message: "Answers saved successfully." });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+
+// Get all answers
+app.get("/answers", async (req, res) => {
+    try {
+        const results = await db.query("SELECT * FROM questionnaire_answers");
+        res.status(200).json({
+            status: "success",
+            results: results.rows.length,
+            data: {
+                Answers: results.rows,
+            },
+        });
+    } catch (err) {
+        console.error(err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
