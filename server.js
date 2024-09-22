@@ -1,16 +1,16 @@
-const db = require("./db")
+const db = require("./db");
 require("dotenv").config();
-const express = require("express")
+const express = require("express");
 
-const app = express()
+const app = express();
 
 app.use(express.json());
 
-//Get all users
+// Get all users
 app.get("/users", async (req, res) => {
-    try{
-        const results = await db.query("SELECT * FROM users;")
-        console.log(results)
+    try {
+        const results = await db.query("SELECT * FROM users;");
+        console.log(results);
         res.status(200).json({
             status: "success",
             results: results.rows.length,
@@ -18,19 +18,18 @@ app.get("/users", async (req, res) => {
                 Users: results.rows,
             },
         });
-    }
-    catch (err) {
-        console.log(err)
+    } catch (err) {
+        console.log(err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
 
-//Get specific user
+// Get specific user
 app.get("/users/:username", async (req, res) => {
     console.log(req.params.username);
-    try{
+    try {
         const results = await db.query("SELECT * FROM users WHERE username = $1", [req.params.username]);
-        console.log(results.rows[0])
+        console.log(results.rows[0]);
         res.status(200).json({
             status: "success",
             results: results.rows.length,
@@ -38,18 +37,17 @@ app.get("/users/:username", async (req, res) => {
                 Users: results.rows[0],
             },
         });
-    }
-    catch (err) {
-        console.log(err)
+    } catch (err) {
+        console.log(err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
 
-//Get all questions
+// Get all questions
 app.get("/questions", async (req, res) => {
-    try{
-        const results = await db.query("SELECT * FROM questionnaire_questions;")
-        console.log(results)
+    try {
+        const results = await db.query("SELECT * FROM questionnaire_questions;");
+        console.log(results);
         res.status(200).json({
             status: "success",
             results: results.rows.length,
@@ -57,19 +55,18 @@ app.get("/questions", async (req, res) => {
                 Users: results.rows,
             },
         });
-    }
-    catch (err) {
-        console.log(err)
+    } catch (err) {
+        console.log(err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
 
-//Get specific question
+// Get specific question
 app.get("/questions/:id", async (req, res) => {
     console.log(req.params.id);
-    try{
+    try {
         const results = await db.query("SELECT * FROM questionnaire_questions WHERE id = $1", [req.params.id]);
-        console.log(results.rows[0])
+        console.log(results.rows[0]);
         res.status(200).json({
             status: "success",
             results: results.rows.length,
@@ -77,9 +74,8 @@ app.get("/questions/:id", async (req, res) => {
                 Users: results.rows[0],
             },
         });
-    }
-    catch (err) {
-        console.log(err)
+    } catch (err) {
+        console.log(err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
@@ -152,15 +148,26 @@ app.post('/login', async (req, res) => {
     }
 });
 
-
 // Save user answers
 app.post("/answers", async (req, res) => {
     const answers = req.body;
 
     try {
-        const promises = answers.map(({ userId, questionId, answer, questionnaireId }) => 
-            db.query(`INSERT INTO questionnaire_answers (user_id, question_id, answer, questionnaire_id) VALUES ($1, $2, $3, $4)`, [userId, questionId, answer, questionnaireId])
-        );
+        const promises = answers.map(async ({ userId, questionId, answer }) => {
+            let formattedAnswer;
+
+            if (Array.isArray(answer)) {
+                formattedAnswer = JSON.stringify(answer);
+            } else {
+                formattedAnswer = answer.toString();
+            }
+
+            return db.query(`
+                INSERT INTO questionnaire_answers (user_id, question_id, answer) 
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, question_id) 
+                DO UPDATE SET answer = excluded.answer`, [userId, questionId, formattedAnswer]);
+        });
 
         await Promise.all(promises);
 
@@ -172,6 +179,7 @@ app.post("/answers", async (req, res) => {
 });
 
 
+
 // Get all answers
 app.get("/answers", async (req, res) => {
     try {
@@ -179,9 +187,7 @@ app.get("/answers", async (req, res) => {
         res.status(200).json({
             status: "success",
             results: results.rows.length,
-            data: {
-                Answers: results.rows,
-            },
+            data: results.rows,
         });
     } catch (err) {
         console.error(err);
@@ -189,6 +195,23 @@ app.get("/answers", async (req, res) => {
     }
 });
 
+// Get answers for a specific user
+app.get("/answers/:userId", async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        const results = await db.query(`SELECT question_id, answer FROM questionnaire_answers WHERE user_id = $1`, [userId]);
+
+        res.status(200).json({
+            status: "success",
+            results: results.rows.length,
+            data: results.rows,
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
