@@ -1,9 +1,14 @@
 const express = require("express");
 const cors = require("cors");
-const db = require("./db");
+const { createClient } = require('@supabase/supabase-js');
 require("dotenv").config();
 
 const app = express();
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL; // Ensure you set this in your .env
+const supabaseKey = process.env.SUPABASE_KEY; // Ensure you set this in your .env
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Use CORS middleware
 app.use(cors());
@@ -12,12 +17,18 @@ app.use(express.json());
 // Get all users
 app.get("/users", async (req, res) => {
     try {
-        const results = await db.query("SELECT * FROM users ORDER BY username;");
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .order('username');
+
+        if (error) throw error;
+
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
+            results: data.length,
             data: {
-                Users: results.rows,
+                Users: data,
             },
         });
     } catch (err) {
@@ -28,15 +39,19 @@ app.get("/users", async (req, res) => {
 
 // Get specific user
 app.get("/users/:username", async (req, res) => {
-    console.log(req.params.username);
     try {
-        const results = await db.query("SELECT * FROM users WHERE username = $1", [req.params.username]);
-        console.log(results.rows[0]);
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', req.params.username);
+
+        if (error) throw error;
+
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
+            results: data.length,
             data: {
-                Users: results.rows[0],
+                Users: data[0],
             },
         });
     } catch (err) {
@@ -48,13 +63,17 @@ app.get("/users/:username", async (req, res) => {
 // Get all questions
 app.get("/questions", async (req, res) => {
     try {
-        const results = await db.query("SELECT * FROM questionnaire_questions;");
-        console.log(results);
+        const { data, error } = await supabase
+            .from('questionnaire_questions')
+            .select('*');
+
+        if (error) throw error;
+
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
+            results: data.length,
             data: {
-                Users: results.rows,
+                Questions: data,
             },
         });
     } catch (err) {
@@ -65,15 +84,19 @@ app.get("/questions", async (req, res) => {
 
 // Get specific question
 app.get("/questions/:id", async (req, res) => {
-    console.log(req.params.id);
     try {
-        const results = await db.query("SELECT * FROM questionnaire_questions WHERE id = $1", [req.params.id]);
-        console.log(results.rows[0]);
+        const { data, error } = await supabase
+            .from('questionnaire_questions')
+            .select('*')
+            .eq('id', req.params.id);
+
+        if (error) throw error;
+
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
+            results: data.length,
             data: {
-                Users: results.rows[0],
+                Question: data[0],
             },
         });
     } catch (err) {
@@ -85,12 +108,17 @@ app.get("/questions/:id", async (req, res) => {
 // Get all questionnaires
 app.get("/questionnaires", async (req, res) => {
     try {
-        const results = await db.query("SELECT * FROM questionnaire_questionnaires");
+        const { data, error } = await supabase
+            .from('questionnaire_questionnaires')
+            .select('*');
+
+        if (error) throw error;
+
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
+            results: data.length,
             data: {
-                Questionnaires: results.rows, // Make sure you return the correct data structure
+                Questionnaires: data,
             },
         });
     } catch (err) {
@@ -103,19 +131,28 @@ app.get("/questionnaires", async (req, res) => {
 app.get("/questionnaire/:id", async (req, res) => {
     const { id } = req.params;
     try {
-        const results = await db.query(`
-            SELECT qq.id, qq.question 
-            FROM questionnaire_junction qj
-            JOIN questionnaire_questions qq ON qj.question_id = qq.id
-            WHERE qj.questionnaire_id = $1
-            ORDER BY qj.priority;
-        `, [id]);
+        // Fetch question IDs along with their priority
+        const { data: junctionData, error: junctionError } = await supabase
+            .from('questionnaire_junction')
+            .select('question_id, priority')
+            .eq('questionnaire_id', id)
+            .order('priority'); // Order by priority here
+
+        if (junctionError) throw junctionError;
+
+        const questionIds = junctionData.map(q => q.question_id);
+        const { data: questions, error: questionError } = await supabase
+            .from('questionnaire_questions')
+            .select('*')
+            .in('id', questionIds);
+
+        if (questionError) throw questionError;
 
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
+            results: questions.length,
             data: {
-                Questions: results.rows,
+                Questions: questions,
             },
         });
     } catch (err) {
@@ -124,15 +161,22 @@ app.get("/questionnaire/:id", async (req, res) => {
     }
 });
 
+
 // User login
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        const results = await db.query("SELECT * FROM users WHERE username = $1 AND password = $2", [username, password]);
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('username', username)
+            .eq('password', password);
 
-        if (results.rows.length > 0) {
-            const user = results.rows[0];
+        if (error) throw error;
+
+        if (data.length > 0) {
+            const user = data[0];
 
             const responseData = {
                 message: 'Login successful',
@@ -167,64 +211,63 @@ app.post("/answers", async (req, res) => {
                 formattedAnswer = answer.toString();
             }
 
-            const existingAnswer = await db.query(`
-                SELECT * FROM questionnaire_answers 
-                WHERE user_id = $1 AND question_id = $2
-            `, [userId, questionId]);
+            const { data: existingAnswer, error: existingError } = await supabase
+                .from('questionnaire_answers')
+                .select('*')
+                .eq('user_id', userId)
+                .eq('question_id', questionId);
 
-            if (existingAnswer.rows.length === 0) {
-                await db.query(`
-                    INSERT INTO questionnaire_answers (user_id, question_id, answer) 
-                    VALUES ($1, $2, $3)
-                `, [userId, questionId, formattedAnswer]);
+            if (existingError) throw existingError;
 
-                const questionnaireId = await db.query(`
-                    SELECT questionnaire_id FROM questionnaire_junction 
-                    WHERE question_id = $1
-                `, [questionId]);
+            if (existingAnswer.length === 0) {
+                await supabase
+                    .from('questionnaire_answers')
+                    .insert([{ user_id: userId, question_id: questionId, answer: formattedAnswer }]);
 
-                questionnaireIds.add(questionnaireId.rows[0].questionnaire_id);
+                const { data: questionnaireIdData, error: questionnaireError } = await supabase
+                    .from('questionnaire_junction')
+                    .select('questionnaire_id')
+                    .eq('question_id', questionId);
+
+                if (questionnaireError) throw questionnaireError;
+
+                questionnaireIds.add(questionnaireIdData[0].questionnaire_id);
             } else {
-                await db.query(`
-                    UPDATE questionnaire_answers 
-                    SET answer = $1 
-                    WHERE user_id = $2 AND question_id = $3
-                `, [formattedAnswer, userId, questionId]);
+                await supabase
+                    .from('questionnaire_answers')
+                    .update({ answer: formattedAnswer })
+                    .match({ user_id: userId, question_id: questionId });
             }
         });
 
         await Promise.all(promises);
 
         for (const questionnaireId of questionnaireIds) {
-            const completedCheck = await db.query(`
-                SELECT COUNT(*) FROM questionnaire_answers 
-                WHERE user_id = $1 AND question_id IN (
-                    SELECT question_id FROM questionnaire_junction 
-                    WHERE questionnaire_id = $2
-                )
-            `, [userId, questionnaireId]);
+            const { data: completedCheckData } = await supabase
+                .from('questionnaire_answers')
+                .select('count(*)')
+                .eq('user_id', userId)
+                .in('question_id', 
+                    await supabase
+                        .from('questionnaire_junction')
+                        .select('question_id')
+                        .eq('questionnaire_id', questionnaireId)
+                        .then(res => res.data.map(q => q.question_id))
+                );
 
-            const completedCount = parseInt(completedCheck.rows[0].count);
-            console.log(`User ${userId} has completed ${completedCount} questions for questionnaire ${questionnaireId}`);
+            const completedCount = parseInt(completedCheckData[0].count);
+            const { data: totalQuestionsData } = await supabase
+                .from('questionnaire_junction')
+                .select('count(*)')
+                .eq('questionnaire_id', questionnaireId);
 
-            const totalQuestions = await db.query(`
-                SELECT COUNT(*) FROM questionnaire_junction 
-                WHERE questionnaire_id = $1
-            `, [questionnaireId]);
-
-            const totalQuestionCount = parseInt(totalQuestions.rows[0].count);
-            console.log(`Total questions in questionnaire ${questionnaireId}: ${totalQuestionCount}`);
+            const totalQuestionCount = parseInt(totalQuestionsData[0].count);
 
             if (completedCount === totalQuestionCount) {
-                await db.query(`
-                    UPDATE users 
-                    SET completed_questionnaires = completed_questionnaires + 1 
-                    WHERE id = $1
-                `, [userId]);
-
-                console.log(`User ${userId} completed questionnaire ${questionnaireId}`);
-            } else {
-                console.log(`User ${userId} has not yet completed questionnaire ${questionnaireId}`);
+                await supabase
+                    .from('users')
+                    .update({ completed_questionnaires: supabase.raw('completed_questionnaires + 1') })
+                    .eq('id', userId);
             }
         }
 
@@ -235,18 +278,19 @@ app.post("/answers", async (req, res) => {
     }
 });
 
-
-
-
-
 // Get all answers
 app.get("/answers", async (req, res) => {
     try {
-        const results = await db.query("SELECT * FROM questionnaire_answers");
+        const { data, error } = await supabase
+            .from('questionnaire_answers')
+            .select('*');
+
+        if (error) throw error;
+
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
-            data: results.rows,
+            results: data.length,
+            data: data,
         });
     } catch (err) {
         console.error(err);
@@ -259,25 +303,26 @@ app.get("/answers/:userId", async (req, res) => {
     const userId = req.params.userId;
 
     try {
-        const results = await db.query(`
-            SELECT qa.question_id, qa.answer, qq.question 
-            FROM questionnaire_answers qa
-            JOIN questionnaire_questions qq ON qa.question_id = qq.id
-            WHERE qa.user_id = $1
-        `, [userId]);
+        const { data, error } = await supabase
+            .from('questionnaire_answers')
+            .select('question_id, answer, questionnaire_questions.question')
+            .join('questionnaire_questions', 'questionnaire_answers.question_id', 'questionnaire_questions.id')
+            .eq('user_id', userId);
+
+        if (error) throw error;
 
         res.status(200).json({
             status: "success",
-            results: results.rows.length,
-            data: results.rows,
+            results: data.length,
+            data: data,
         });
     } catch (err) {
-        console.log(err);
+        console.error(err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
 
-
+// Start server
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
     console.log(`Server is up and listening on port ${port}`);
