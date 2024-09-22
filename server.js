@@ -1,5 +1,5 @@
 const express = require("express");
-const cors = require("cors"); // Import cors
+const cors = require("cors");
 const db = require("./db");
 require("dotenv").config();
 
@@ -12,7 +12,7 @@ app.use(express.json());
 // Get all users
 app.get("/users", async (req, res) => {
     try {
-        const results = await db.query("SELECT * FROM users;");
+        const results = await db.query("SELECT * FROM users ORDER BY username;");
         res.status(200).json({
             status: "success",
             results: results.rows.length,
@@ -155,6 +155,9 @@ app.post("/answers", async (req, res) => {
     const answers = req.body;
 
     try {
+        const userId = answers[0].userId;
+        const questionnaireIds = new Set();
+
         const promises = answers.map(async ({ userId, questionId, answer }) => {
             let formattedAnswer;
 
@@ -164,14 +167,66 @@ app.post("/answers", async (req, res) => {
                 formattedAnswer = answer.toString();
             }
 
-            return db.query(`
-                INSERT INTO questionnaire_answers (user_id, question_id, answer) 
-                VALUES ($1, $2, $3)
-                ON CONFLICT (user_id, question_id) 
-                DO UPDATE SET answer = excluded.answer`, [userId, questionId, formattedAnswer]);
+            const existingAnswer = await db.query(`
+                SELECT * FROM questionnaire_answers 
+                WHERE user_id = $1 AND question_id = $2
+            `, [userId, questionId]);
+
+            if (existingAnswer.rows.length === 0) {
+                await db.query(`
+                    INSERT INTO questionnaire_answers (user_id, question_id, answer) 
+                    VALUES ($1, $2, $3)
+                `, [userId, questionId, formattedAnswer]);
+
+                const questionnaireId = await db.query(`
+                    SELECT questionnaire_id FROM questionnaire_junction 
+                    WHERE question_id = $1
+                `, [questionId]);
+
+                questionnaireIds.add(questionnaireId.rows[0].questionnaire_id);
+            } else {
+                await db.query(`
+                    UPDATE questionnaire_answers 
+                    SET answer = $1 
+                    WHERE user_id = $2 AND question_id = $3
+                `, [formattedAnswer, userId, questionId]);
+            }
         });
 
         await Promise.all(promises);
+
+        for (const questionnaireId of questionnaireIds) {
+            const completedCheck = await db.query(`
+                SELECT COUNT(*) FROM questionnaire_answers 
+                WHERE user_id = $1 AND question_id IN (
+                    SELECT question_id FROM questionnaire_junction 
+                    WHERE questionnaire_id = $2
+                )
+            `, [userId, questionnaireId]);
+
+            const completedCount = parseInt(completedCheck.rows[0].count);
+            console.log(`User ${userId} has completed ${completedCount} questions for questionnaire ${questionnaireId}`);
+
+            const totalQuestions = await db.query(`
+                SELECT COUNT(*) FROM questionnaire_junction 
+                WHERE questionnaire_id = $1
+            `, [questionnaireId]);
+
+            const totalQuestionCount = parseInt(totalQuestions.rows[0].count);
+            console.log(`Total questions in questionnaire ${questionnaireId}: ${totalQuestionCount}`);
+
+            if (completedCount === totalQuestionCount) {
+                await db.query(`
+                    UPDATE users 
+                    SET completed_questionnaires = completed_questionnaires + 1 
+                    WHERE id = $1
+                `, [userId]);
+
+                console.log(`User ${userId} completed questionnaire ${questionnaireId}`);
+            } else {
+                console.log(`User ${userId} has not yet completed questionnaire ${questionnaireId}`);
+            }
+        }
 
         res.status(201).json({ status: "success", message: "Answers saved successfully." });
     } catch (err) {
@@ -179,6 +234,8 @@ app.post("/answers", async (req, res) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 });
+
+
 
 
 
@@ -197,12 +254,17 @@ app.get("/answers", async (req, res) => {
     }
 });
 
-// Get answers for a specific user
+// Get answers for a specific user, including question text
 app.get("/answers/:userId", async (req, res) => {
-    const { userId } = req.params;
+    const userId = req.params.userId;
 
     try {
-        const results = await db.query(`SELECT question_id, answer FROM questionnaire_answers WHERE user_id = $1`, [userId]);
+        const results = await db.query(`
+            SELECT qa.question_id, qa.answer, qq.question 
+            FROM questionnaire_answers qa
+            JOIN questionnaire_questions qq ON qa.question_id = qq.id
+            WHERE qa.user_id = $1
+        `, [userId]);
 
         res.status(200).json({
             status: "success",
@@ -210,10 +272,11 @@ app.get("/answers/:userId", async (req, res) => {
             data: results.rows,
         });
     } catch (err) {
-        console.error(err);
+        console.log(err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
+
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
