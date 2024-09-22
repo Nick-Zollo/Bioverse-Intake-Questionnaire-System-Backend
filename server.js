@@ -1,16 +1,18 @@
+const express = require("express");
+const cors = require("cors"); // Import cors
 const db = require("./db");
 require("dotenv").config();
-const express = require("express");
 
 const app = express();
 
+// Use CORS middleware
+app.use(cors());
 app.use(express.json());
 
 // Get all users
 app.get("/users", async (req, res) => {
     try {
         const results = await db.query("SELECT * FROM users;");
-        console.log(results);
         res.status(200).json({
             status: "success",
             results: results.rows.length,
