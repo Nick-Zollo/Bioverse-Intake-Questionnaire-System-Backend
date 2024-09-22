@@ -6,8 +6,8 @@ require("dotenv").config();
 const app = express();
 
 // Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL; // Ensure you set this in your .env
-const supabaseKey = process.env.SUPABASE_KEY; // Ensure you set this in your .env
+const supabaseUrl = process.env.SUPABASE_URL || 'https://prtoqdzosfuissodapig.supabase.co'; // Ensure you set this in your .env
+const supabaseKey = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBydG9xZHpvc2Z1aXNzb2RhcGlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcyNzAxMTczNiwiZXhwIjoyMDQyNTg3NzM2fQ.P6CKjDRxdqJ5375EMoiPBP9X0pX69qncMOwsF6Tzm_Q'; // Ensure you set this in your .env
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Use CORS middleware
@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json());
 
 // Get all users
-app.get("/users", async (req, res) => {
+app.get("/api/users", async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('users')
@@ -38,7 +38,7 @@ app.get("/users", async (req, res) => {
 });
 
 // Get specific user
-app.get("/users/:username", async (req, res) => {
+app.get("/api/users/:username", async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('users')
@@ -61,7 +61,7 @@ app.get("/users/:username", async (req, res) => {
 });
 
 // Get all questions
-app.get("/questions", async (req, res) => {
+app.get("/api/questions", async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('questionnaire_questions')
@@ -83,7 +83,7 @@ app.get("/questions", async (req, res) => {
 });
 
 // Get specific question
-app.get("/questions/:id", async (req, res) => {
+app.get("/api/questions/:id", async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('questionnaire_questions')
@@ -106,7 +106,7 @@ app.get("/questions/:id", async (req, res) => {
 });
 
 // Get all questionnaires
-app.get("/questionnaires", async (req, res) => {
+app.get("/api/questionnaires", async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('questionnaire_questionnaires')
@@ -128,7 +128,7 @@ app.get("/questionnaires", async (req, res) => {
 });
 
 // Get questions by questionnaire ID
-app.get("/questionnaire/:id", async (req, res) => {
+app.get("/api/questionnaire/:id", async (req, res) => {
     const { id } = req.params;
     try {
         // Fetch question IDs along with their priority
@@ -163,7 +163,7 @@ app.get("/questionnaire/:id", async (req, res) => {
 
 
 // User login
-app.post('/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
     try {
@@ -195,7 +195,7 @@ app.post('/login', async (req, res) => {
 });
 
 // Save user answers
-app.post("/answers", async (req, res) => {
+app.post("/api/answers", async (req, res) => {
     const answers = req.body;
 
     try {
@@ -279,7 +279,7 @@ app.post("/answers", async (req, res) => {
 });
 
 // Get all answers
-app.get("/answers", async (req, res) => {
+app.get("/api/answers", async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('questionnaire_answers')
@@ -299,7 +299,7 @@ app.get("/answers", async (req, res) => {
 });
 
 // Get answers for a specific user, including question text
-app.get("/answers/:userId", async (req, res) => {
+app.get("/api/answers/:userId", async (req, res) => {
     const userId = req.params.userId;
 
     try {
@@ -322,8 +322,4 @@ app.get("/answers/:userId", async (req, res) => {
     }
 });
 
-// Start server
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-    console.log(`Server is up and listening on port ${port}`);
-});
+export default app;

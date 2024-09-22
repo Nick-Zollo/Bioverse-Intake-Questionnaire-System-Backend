@@ -28,3 +28,5 @@ build/
 # VSCode
 .vscode/
 .history/
+
+.vercel
