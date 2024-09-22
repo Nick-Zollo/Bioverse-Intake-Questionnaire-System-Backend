@@ -6,8 +6,8 @@ require("dotenv").config();
 const app = express();
 
 // Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL || 'https://prtoqdzosfuissodapig.supabase.co'; // Ensure you set this in your .env
-const supabaseKey = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBydG9xZHpvc2Z1aXNzb2RhcGlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcyNzAxMTczNiwiZXhwIjoyMDQyNTg3NzM2fQ.P6CKjDRxdqJ5375EMoiPBP9X0pX69qncMOwsF6Tzm_Q'; // Ensure you set this in your .env
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Use CORS middleware
@@ -131,12 +131,11 @@ app.get("/api/questionnaires", async (req, res) => {
 app.get("/api/questionnaire/:id", async (req, res) => {
     const { id } = req.params;
     try {
-        // Fetch question IDs along with their priority
         const { data: junctionData, error: junctionError } = await supabase
             .from('questionnaire_junction')
             .select('question_id, priority')
             .eq('questionnaire_id', id)
-            .order('priority'); // Order by priority here
+            .order('priority');
 
         if (junctionError) throw junctionError;
 
@@ -198,6 +197,8 @@ app.post('/api/login', async (req, res) => {
 app.post("/api/answers", async (req, res) => {
     const answers = req.body;
 
+    console.log('Incoming answers:', answers);
+
     try {
         const userId = answers[0].userId;
         const questionnaireIds = new Set();
@@ -217,35 +218,51 @@ app.post("/api/answers", async (req, res) => {
                 .eq('user_id', userId)
                 .eq('question_id', questionId);
 
-            if (existingError) throw existingError;
+            if (existingError) {
+                console.error('Error fetching existing answers:', existingError);
+                throw existingError;
+            }
 
             if (existingAnswer.length === 0) {
-                await supabase
+                const { data: insertData, error: insertError } = await supabase
                     .from('questionnaire_answers')
                     .insert([{ user_id: userId, question_id: questionId, answer: formattedAnswer }]);
+
+                if (insertError) {
+                    console.error('Insert error:', insertError);
+                    throw insertError;
+                }
 
                 const { data: questionnaireIdData, error: questionnaireError } = await supabase
                     .from('questionnaire_junction')
                     .select('questionnaire_id')
                     .eq('question_id', questionId);
 
-                if (questionnaireError) throw questionnaireError;
+                if (questionnaireError) {
+                    console.error('Error fetching questionnaire ID:', questionnaireError);
+                    throw questionnaireError;
+                }
 
                 questionnaireIds.add(questionnaireIdData[0].questionnaire_id);
             } else {
-                await supabase
+                const { data: updateData, error: updateError } = await supabase
                     .from('questionnaire_answers')
                     .update({ answer: formattedAnswer })
                     .match({ user_id: userId, question_id: questionId });
+
+                if (updateError) {
+                    console.error('Update error:', updateError);
+                    throw updateError;
+                }
             }
         });
 
         await Promise.all(promises);
 
         for (const questionnaireId of questionnaireIds) {
-            const { data: completedCheckData } = await supabase
+            const completedCheckData = await supabase
                 .from('questionnaire_answers')
-                .select('count(*)')
+                .select('*')
                 .eq('user_id', userId)
                 .in('question_id', 
                     await supabase
@@ -255,25 +272,50 @@ app.post("/api/answers", async (req, res) => {
                         .then(res => res.data.map(q => q.question_id))
                 );
 
-            const completedCount = parseInt(completedCheckData[0].count);
-            const { data: totalQuestionsData } = await supabase
+            const completedCount = completedCheckData.data.length;
+            console.log('Completed Count for questionnaireId:', questionnaireId, 'is', completedCount);
+
+            const totalQuestionsData = await supabase
                 .from('questionnaire_junction')
-                .select('count(*)')
+                .select('*')
                 .eq('questionnaire_id', questionnaireId);
 
-            const totalQuestionCount = parseInt(totalQuestionsData[0].count);
+            const totalQuestionCount = totalQuestionsData.data.length;
+            console.log('Total Question Count for questionnaireId:', questionnaireId, 'is', totalQuestionCount);
 
             if (completedCount === totalQuestionCount) {
-                await supabase
+                console.log('All questions completed for questionnaire:', questionnaireId);
+
+                const { data: userData, error: userFetchError } = await supabase
                     .from('users')
-                    .update({ completed_questionnaires: supabase.raw('completed_questionnaires + 1') })
+                    .select('completed_questionnaires')
+                    .eq('id', userId)
+                    .single();
+
+                if (userFetchError) {
+                    console.error('Error fetching user data:', userFetchError);
+                    throw userFetchError;
+                }
+
+                const currentCompletedQuestionnaires = userData.completed_questionnaires;
+
+                const { data: userUpdateData, error: userUpdateError } = await supabase
+                    .from('users')
+                    .update({ completed_questionnaires: currentCompletedQuestionnaires + 1 })
                     .eq('id', userId);
+
+                if (userUpdateError) {
+                    console.error('User update error:', userUpdateError);
+                    throw userUpdateError;
+                } else {
+                    console.log('User update successful:', userUpdateData);
+                }
             }
         }
 
         res.status(201).json({ status: "success", message: "Answers saved successfully." });
     } catch (err) {
-        console.error(err);
+        console.error('Error fetching data:', err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
@@ -303,11 +345,7 @@ app.get("/api/answers/:userId", async (req, res) => {
     const userId = req.params.userId;
 
     try {
-        const { data, error } = await supabase
-            .from('questionnaire_answers')
-            .select('question_id, answer, questionnaire_questions.question')
-            .join('questionnaire_questions', 'questionnaire_answers.question_id', 'questionnaire_questions.id')
-            .eq('user_id', userId);
+        const { data, error } = await supabase.rpc('get_user_answers', { p_user_id: userId });
 
         if (error) throw error;
 
@@ -317,7 +355,7 @@ app.get("/api/answers/:userId", async (req, res) => {
             data: data,
         });
     } catch (err) {
-        console.error(err);
+        console.error('Error fetching data:', err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
